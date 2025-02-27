@@ -165,4 +165,7 @@ config SPL_PARTITION_TYPE_GUID
 	  Activate the configuration of GUID type
 	  for EFI partition
 
+config CUSTOM_PARTITION
+    bool "Support for custom partition table"
+
 endmenu
