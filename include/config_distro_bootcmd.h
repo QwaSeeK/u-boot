@@ -510,6 +510,41 @@
 			"echo EXTLINUX FAILED: continuing...; "           \
 		"fi\0"                                                    \
 	\
+	"boot_script=" \
+		"sf probe;" \
+		"setenv bootargs_root \"root=/dev/mtdblock4 ro rootwait rootfs=erofs\"; " \
+		"setenv bootargs_console \"console=tty0 console=ttyAML0,115200n8\"; " \
+		"setenv bootargs_mtdparts \"mtdparts=spi0.0:2M(uboot),64k(env),6M(kernel),-(rootfs) mtdids=nor0=spi0.0\"; " \
+		"setenv bootargs \"${bootargs_console} ${bootargs_root} ${bootargs_mtdparts}\"; " \
+		"echo \"Loading LZMA-compressed kernel from mmc\"; " \
+		"if sf read 0x10000000 0x00210000 0x00600000; then " \
+			"echo \"Image.lzma loaded successfully.\"; " \
+			"if lzmadec 0x10000000 ${kernel_addr_r}; then " \
+				"echo \"LZMA decompression successful.\"; " \
+			"else " \
+				"echo \"Error: LZMA decompression failed!\"; " \
+				"reset;" \
+			"fi; " \
+		"else " \
+			"echo \"Error: Failed to load Image.lzma from SPI!\"; " \
+			"reset;" \
+		"fi; " \
+		"printenv bootargs;" \
+		"echo \"Starting kernel\"; " \
+		"fdt addr ${fdtcontroladdr}; " \
+		"booti ${kernel_addr_r} - ${fdtcontroladdr}; " \
+		"echo \"Boot failed, resetting...\"; " \
+		"reset\0" \
+	\
+	"bootcmd_check_button=" \
+		"gpio input aobus-banks10; " \
+		"setenv button_state $?; " \
+		"if test ${button_state} -eq 1; then " \
+			"run bootcmd_rescue; " \
+		"else " \
+			"run boot_script; " \
+		"fi;\0" \
+	\
 	"boot_a_script="                                                  \
 		"load ${devtype} ${devnum}:${distro_bootpart} "           \
 			"${scriptaddr} ${prefix}${script}; "              \
@@ -526,6 +561,62 @@
 				"echo SCRIPT FAILED: continuing...; "     \
 			"fi; "                                            \
 		"done\0"                                                  \
+	\
+	"rescue_single=" \
+		"echo \"Flashing rescueall.img to eMMC...\"; " \
+		"load usb 0:1 ${loadaddr} rescueall.img; " \
+		"setexpr blkcnt ${filesize} + 511; " \
+		"setexpr blkcnt ${blkcnt} / 512; " \
+		"mmc dev 1; " \
+		"mmc write ${loadaddr} 0x0 ${blkcnt}; " \
+		"echo \"Flashing complete. Rebooting...\"; " \
+	"reset; \0" \
+	\
+	"rescue_chunked=" \
+		"setenv offset 0; " \
+		"setenv mmcblkstart 0; " \
+		"setexpr chunksize 0x8000000; " \
+		"setenv totalblocks 0; " \
+		"while true; do " \
+		"echo Loading chunk at offset ${offset}...; " \
+		"load usb 0:1 ${loadaddr} rescue.img ${chunksize} ${offset}; " \
+		"if test ${filesize} -eq 0; then " \
+			"echo \"Flashing finished!\"; " \
+			"echo \"Total blocks written: ${totalblocks}\"; " \
+			"reset; " \
+		"fi; " \
+		"setexpr partblocks ${filesize} + 511; " \
+		"setexpr partblocks ${partblocks} / 512; " \
+		"echo Writing ${partblocks} blocks to eMMC @ ${mmcblkstart}...; " \
+		"mmc write ${loadaddr} ${mmcblkstart} ${partblocks}; " \
+		"setexpr mmcblkstart ${mmcblkstart} + ${partblocks}; " \
+		"setexpr totalblocks ${totalblocks} + ${partblocks}; " \
+		"setexpr.l offset ${offset} + ${filesize}; " \
+	"done; \0" \
+	\
+	"rescue_multipart=" \
+    "setenv partnum 0; " \
+    "setenv mmcblkstart 0; " \
+    "while true; do " \
+        "setexpr partstrnum ${partnum} + 0; " \
+        "if test ${partstrnum} -lt 10; then " \
+            "setenv partstr 0${partstrnum}; " \
+        "else " \
+            "setenv partstr ${partstrnum}; " \
+        "fi; " \
+        "echo \"Loading rescue.img.part.${partstr}...\"; " \
+        "if load usb 0:1 ${loadaddr} rescue.img.part.${partstr}; then " \
+            "setexpr partblocks ${filesize} + 511; " \
+            "setexpr partblocks ${partblocks} / 512; " \
+            "echo \"Writing ${partblocks} blocks to eMMC @ ${mmcblkstart}\"; " \
+            "mmc write ${loadaddr} ${mmcblkstart} ${partblocks}; " \
+            "setexpr mmcblkstart ${mmcblkstart} + ${partblocks}; " \
+            "setexpr partnum ${partnum} + 1; " \
+        "else " \
+            "echo \"No more parts. Rescue image complete.\"; " \
+            "reset; " \
+        "fi; " \
+    "done; \0" \
 	\
 	"scan_dev_for_boot="                                              \
 		"echo Scanning ${devtype} "                               \
