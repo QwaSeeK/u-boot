@@ -879,7 +879,12 @@ static int dwmci_get_cd(struct udevice *dev)
 
 #if defined(CONFIG_DM_GPIO) && (defined(CONFIG_SPL_GPIO_SUPPORT) || !defined(CONFIG_SPL_BUILD))
 	struct gpio_desc detect;
+#endif
 
+	if (dev_read_bool(dev, "broken-cd"))
+		return 1;
+
+#if defined(CONFIG_DM_GPIO) && (defined(CONFIG_SPL_GPIO_SUPPORT) || !defined(CONFIG_SPL_BUILD))
 	ret = gpio_request_by_name(dev, "cd-gpios", 0, &detect, GPIOD_IS_IN);
 	if (ret) {
 		goto dw_mmc_cdetect;
